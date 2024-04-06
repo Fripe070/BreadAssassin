@@ -70,7 +70,10 @@ class BreadAssassin(ModuleCog):
         )
         self.logger.debug(f"Message {old_message.id} edited and tracked")
 
-    @commands.hybrid_command(description='"Snipe" a message that was recently edited or deleted')
+    @commands.hybrid_command(
+        aliases=["s"],
+        description='"Snipe" a message that was recently edited or deleted'
+    )
     async def snipe(self, ctx: commands.Context):
         if not self.settings.allow_edit_sniping.value and not self.settings.allow_deletion_sniping.value:
             await ctx.reply("Sniping is disabled.")
