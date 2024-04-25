@@ -9,7 +9,6 @@ import breadcord
 from breadcord.module import ModuleCog
 from .response_handlers import embed_response_handler, webhook_response_handler
 from .types import MessageState, ChangeType
-from .views import DeleteMessageButton
 
 
 class BreadAssassin(ModuleCog):
@@ -48,6 +47,8 @@ class BreadAssassin(ModuleCog):
     async def on_message_delete(self, message: discord.Message):
         if not self.settings.allow_deletion_sniping.value:
             return
+        if self.settings.allow_self_snipe.value and message.author == self.bot.user:
+            return
         self.message_cache[discord.Object(message.id)].append(
             MessageState(
                 message=message,
@@ -60,6 +61,8 @@ class BreadAssassin(ModuleCog):
     @ModuleCog.listener()
     async def on_message_edit(self, old_message: discord.Message, _):
         if not self.settings.allow_edit_sniping.value:
+            return
+        if self.settings.allow_self_snipe.value and old_message.author == self.bot.user:
             return
         self.message_cache[discord.Object(old_message.id)].append(
             MessageState(

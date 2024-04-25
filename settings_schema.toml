@@ -3,6 +3,8 @@ max_age = 30
 
 # Allow the original message author to delete the snipe of their message
 allow_snipe_deletion = true
+# Allow self-snipes (the bot sniping its own messages)
+allow_self_snipe = true
 
 # If the bot should allow sniping message deletions
 allow_edit_sniping = true
