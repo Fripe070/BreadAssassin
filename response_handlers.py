@@ -43,7 +43,7 @@ async def embed_response_handler(ctx: commands.Context, message_states: list[Mes
         content += f"in reply to {reply.author.mention} "
         embeds.append(reply_embed(reply))
     for embed in latest_state.message.embeds:
-        if "video" in embed.to_dict():
+        if embed.type != "rich":
             continue
         embeds.append(embed)
 
@@ -85,7 +85,7 @@ async def webhook_response_handler(ctx: commands.Context, message_states: list[M
 
     embeds = []
     for embed in latest_state.message.embeds:
-        if "video" in embed.to_dict():
+        if embed.type != "rich":
             continue
         embeds.append(embed)
     if latest_state.message.reference and (reply := latest_state.message.reference.cached_message):
