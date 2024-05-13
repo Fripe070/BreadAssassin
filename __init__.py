@@ -7,14 +7,16 @@ from discord.ext import tasks, commands
 
 import breadcord
 from breadcord.module import ModuleCog
-from .response_handlers import embed_response_handler, webhook_response_handler
+from .response_handlers import embed_response_handler, webhook_response_handler, ResponseHandler
 from .types import MessageState, ChangeType
+
+MessageID = int
 
 
 class BreadAssassin(ModuleCog):
     def __init__(self, module_id: str):
         super().__init__(module_id)
-        self.message_cache: defaultdict[discord.Object, list[MessageState]] = defaultdict(list)
+        self.message_cache: defaultdict[MessageID, list[MessageState]] = defaultdict(list)
         self.prune_message_cache.start()
 
         @self.settings.snipe_response_type.observe
@@ -28,11 +30,11 @@ class BreadAssassin(ModuleCog):
 
     @tasks.loop(seconds=3)
     async def prune_message_cache(self):
-        for message_id, message_states in tuple(self.message_cache.items()):
+        for message_id, message_states in self.message_cache.copy().items():
             latest_state = message_states[-1]
             if self.is_state_expired(latest_state):
                 self.message_cache.pop(message_id)
-                self.logger.debug(f"Message {message_id.id} removed from cache")
+                self.logger.debug(f"Message {message_id} removed from cache")
 
     def get_tracked_states_in_channel(self, channel: discord.TextChannel) -> list[list[MessageState]]:
         channel_states = [
@@ -49,7 +51,7 @@ class BreadAssassin(ModuleCog):
             return
         if self.settings.allow_self_snipe.value and message.author == self.bot.user:
             return
-        self.message_cache[discord.Object(message.id)].append(
+        self.message_cache[message.id].append(
             MessageState(
                 message=message,
                 changed_through=ChangeType.DELETE,
@@ -64,7 +66,7 @@ class BreadAssassin(ModuleCog):
             return
         if self.settings.allow_self_snipe.value and old_message.author == self.bot.user:
             return
-        self.message_cache[discord.Object(old_message.id)].append(
+        self.message_cache[old_message.id].append(
             MessageState(
                 message=old_message,
                 changed_through=ChangeType.EDIT,
@@ -88,18 +90,17 @@ class BreadAssassin(ModuleCog):
             return
 
         sniped_message_sates = message_states[-1]
+        await self.get_response_handler()(ctx, sniped_message_sates)
+        with contextlib.suppress(KeyError):  # Race condition if it gets automatically pruned
+            self.message_cache.pop(sniped_message_sates[-1].message.id)
 
-        match self.settings.snipe_response_type.value:
-            case "embed":
-                response_handler = embed_response_handler
-            case "webhook":
-                response_handler = webhook_response_handler
-            case _:
-                raise ValueError(f"Invalid snipe response type: {self.settings.snipe_response_type.value}")
-
-        await response_handler(ctx, message_states=sniped_message_sates)
-        with contextlib.suppress(KeyError):
-            self.message_cache.pop(discord.Object(sniped_message_sates[-1].message.id))
+    def get_response_handler(self) -> ResponseHandler:
+        snipe_response_type = self.settings.snipe_response_type.value
+        if snipe_response_type == "embed":
+            return embed_response_handler
+        if snipe_response_type == "webhook":
+            return webhook_response_handler
+        raise ValueError(f"Invalid snipe response type: {snipe_response_type}")
 
 
 async def setup(bot: breadcord.Bot):

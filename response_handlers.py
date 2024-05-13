@@ -1,4 +1,6 @@
 import time
+from collections.abc import Coroutine, Callable
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -7,9 +9,12 @@ from .types import MessageState
 from .views import DeleteMessageButton
 
 __all__ = (
+    "ResponseHandler",
     "embed_response_handler",
     "webhook_response_handler",
 )
+
+ResponseHandler = Callable[[commands.Context, list[MessageState]], Coroutine[Any, Any, None]]
 
 
 def strip_with_dots(string: str, *, max_length: int) -> str:
@@ -18,7 +23,7 @@ def strip_with_dots(string: str, *, max_length: int) -> str:
     return string[:max_length - 3] + "..."
 
 
-async def embed_response_handler(ctx: commands.Context, *, message_states: list[MessageState]) -> None:
+async def embed_response_handler(ctx: commands.Context, message_states: list[MessageState]) -> None:
     # TODO: Allow sniping older versions of a message
     latest_state: MessageState = message_states[-1]
 
@@ -37,7 +42,10 @@ async def embed_response_handler(ctx: commands.Context, *, message_states: list[
     if latest_state.message.reference and (reply := latest_state.message.reference.cached_message):
         content += f"in reply to {reply.author.mention} "
         embeds.append(reply_embed(reply))
-    embeds.extend(latest_state.message.embeds)
+    for embed in latest_state.message.embeds:
+        if "video" in embed.to_dict():
+            continue
+        embeds.append(embed)
 
     button = DeleteMessageButton(sniped_user_id=latest_state.message.author.id, sniper_user_id=ctx.author.id)
     response = await ctx.reply(
@@ -52,7 +60,7 @@ async def embed_response_handler(ctx: commands.Context, *, message_states: list[
         await response.delete()
 
 
-async def webhook_response_handler(ctx: commands.Context, *, message_states: list[MessageState]) -> None:
+async def webhook_response_handler(ctx: commands.Context, message_states: list[MessageState]) -> None:
     # TODO: Allow sniping older versions of a message
     latest_state: MessageState = message_states[-1]
 
@@ -75,11 +83,14 @@ async def webhook_response_handler(ctx: commands.Context, *, message_states: lis
         await embed_response_handler(ctx, message_states=message_states)
         raise error
 
-    files = [await file.to_file() for file in latest_state.message.attachments + latest_state.message.stickers]
     embeds = []
+    for embed in latest_state.message.embeds:
+        if "video" in embed.to_dict():
+            continue
+        embeds.append(embed)
     if latest_state.message.reference and (reply := latest_state.message.reference.cached_message):
-        embeds.append(reply_embed(reply))
-    embeds.extend(latest_state.message.embeds)
+        embeds.insert(0, reply_embed(reply))
+    files = [await file.to_file() for file in latest_state.message.attachments + latest_state.message.stickers]
 
     button = DeleteMessageButton(sniped_user_id=latest_state.message.author.id, sniper_user_id=ctx.author.id)
     response = await snipe_webhook.send(
