@@ -113,7 +113,7 @@ async def webhook_response_handler(
         allowed_mentions=discord.AllowedMentions.none(),
         view=button,
         wait=True,
-        thread=ctx.channel if isinstance(ctx.channel, discord.Thread) else None,
+        thread=ctx.channel if isinstance(ctx.channel, discord.Thread) else discord.utils.MISSING,
     )
     if ctx.interaction:
         await ctx.reply("Sniped message.", ephemeral=True)
