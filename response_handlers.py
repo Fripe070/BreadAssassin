@@ -12,9 +12,15 @@ __all__ = (
     "ResponseHandler",
     "embed_response_handler",
     "webhook_response_handler",
+    "ACCEPTED_WEBHOOK_NAME",
 )
 
-ResponseHandler = Callable[[commands.Context, list[MessageState]], Coroutine[Any, Any, None]]
+ACCEPTED_WEBHOOK_NAME = "breadcord_bread_assassin_snipe_hook"
+
+ResponseHandler = Callable[
+    [commands.Context, list[MessageState]],
+    Coroutine[Any, Any, tuple[DeleteMessageButton, discord.Message]],
+]
 
 
 def strip_with_dots(string: str, *, max_length: int) -> str:
@@ -23,7 +29,10 @@ def strip_with_dots(string: str, *, max_length: int) -> str:
     return string[:max_length - 3] + "..."
 
 
-async def embed_response_handler(ctx: commands.Context, message_states: list[MessageState]) -> None:
+async def embed_response_handler(
+    ctx: commands.Context,
+    message_states: list[MessageState]
+) -> tuple[DeleteMessageButton, discord.Message]:
     # TODO: Allow sniping older versions of a message
     latest_state: MessageState = message_states[-1]
 
@@ -55,27 +64,28 @@ async def embed_response_handler(ctx: commands.Context, message_states: list[Mes
         view=button
     )
 
-    await button.wait()
-    if button.should_delete:
-        await response.delete()
+    return button, response
 
 
-async def webhook_response_handler(ctx: commands.Context, message_states: list[MessageState]) -> None:
+async def webhook_response_handler(
+    ctx: commands.Context,
+    message_states: list[MessageState]
+) -> tuple[DeleteMessageButton, discord.Message]:
     # TODO: Allow sniping older versions of a message
     latest_state: MessageState = message_states[-1]
+    parent_channel = ctx.channel.parent if isinstance(ctx.channel, discord.Thread) else ctx.channel
 
-    accepted_webhook_name = "breadcord_bread_assassin_snipe_hook"  # Legacy support for the old webhook name
     try:
         snipe_webhook: discord.Webhook | None = discord.utils.find(
-            lambda webhook: webhook.name == accepted_webhook_name,
-            await ctx.channel.webhooks()
+            lambda webhook: webhook.name == ACCEPTED_WEBHOOK_NAME,
+            await parent_channel.webhooks()
         )
         # We seemingly can't get the token after a while, so we just make a new webhook
         if not snipe_webhook or not snipe_webhook.token:
             if snipe_webhook is not None:
                 await snipe_webhook.delete(reason="Could not get webhook token")
-            snipe_webhook = await ctx.channel.create_webhook(
-                name=accepted_webhook_name,
+            snipe_webhook = await parent_channel.create_webhook(
+                name=ACCEPTED_WEBHOOK_NAME,
                 reason="Webhook needed to spoof message author for sniping."
             )
     except discord.HTTPException as error:  # includes Forbidden
@@ -103,13 +113,12 @@ async def webhook_response_handler(ctx: commands.Context, message_states: list[M
         allowed_mentions=discord.AllowedMentions.none(),
         view=button,
         wait=True,
+        thread=ctx.channel if isinstance(ctx.channel, discord.Thread) else None,
     )
     if ctx.interaction:
         await ctx.reply("Sniped message.", ephemeral=True)
 
-    await button.wait()
-    if button.should_delete:
-        await response.delete()
+    return button, response
 
 
 def reply_embed(message: discord.Message) -> discord.Embed:

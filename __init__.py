@@ -1,16 +1,23 @@
 import contextlib
 from collections import defaultdict
 from datetime import datetime, timedelta
+from enum import Enum
 
 import discord
 from discord.ext import tasks, commands
 
 import breadcord
 from breadcord.module import ModuleCog
-from .response_handlers import embed_response_handler, webhook_response_handler, ResponseHandler
+from .response_handlers import embed_response_handler, webhook_response_handler, ResponseHandler, ACCEPTED_WEBHOOK_NAME
 from .types import MessageState, ChangeType
+from .views import DeleteMessageButton
 
 MessageID = int
+
+
+class ResponseType(Enum):
+    EMBED = "embed"
+    WEBHOOK = "webhook"
 
 
 class BreadAssassin(ModuleCog):
@@ -21,9 +28,14 @@ class BreadAssassin(ModuleCog):
 
         @self.settings.snipe_response_type.observe
         def on_snipe_response_type_changed(_, new: str) -> None:
-            if new not in ("embed", "webhook"):
+            # noinspection PyProtectedMember
+            if new not in ResponseType._value2member_map_:
                 raise ValueError(f"Invalid snipe response type: {new}")
         on_snipe_response_type_changed(None, self.settings.snipe_response_type.value)
+
+    @property
+    def snipe_response_type(self) -> ResponseType:
+        return ResponseType(self.settings.snipe_response_type.value)
 
     def is_state_expired(self, state: MessageState, *, lenience: timedelta = timedelta()) -> bool:
         return state.changed_at + timedelta(seconds=self.settings.max_age.value) + lenience < datetime.now()
@@ -45,11 +57,22 @@ class BreadAssassin(ModuleCog):
         channel_states.sort(key=lambda message_states: message_states[-1].changed_at)
         return channel_states
 
+    async def can_snipe_message(self, message: discord.Message) -> bool:
+        if self.settings.allow_self_snipe.value:
+            if message.author == self.bot.user:
+                return False
+            # Will technically mess up if we snipe a webhook right after the response type is changed... but oh well
+            if message.webhook_id is not None and self.snipe_response_type == ResponseType.WEBHOOK:
+                webhook = await self.bot.fetch_webhook(message.webhook_id)
+                if webhook.name == ACCEPTED_WEBHOOK_NAME:
+                    return False
+        return True
+
     @ModuleCog.listener()
     async def on_message_delete(self, message: discord.Message):
         if not self.settings.allow_deletion_sniping.value:
             return
-        if self.settings.allow_self_snipe.value and message.author == self.bot.user:
+        if not await self.can_snipe_message(message):
             return
         self.message_cache[message.id].append(
             MessageState(
@@ -64,7 +87,7 @@ class BreadAssassin(ModuleCog):
     async def on_message_edit(self, old_message: discord.Message, _):
         if not self.settings.allow_edit_sniping.value:
             return
-        if self.settings.allow_self_snipe.value and old_message.author == self.bot.user:
+        if not await self.can_snipe_message(old_message):
             return
         self.message_cache[old_message.id].append(
             MessageState(
@@ -90,17 +113,31 @@ class BreadAssassin(ModuleCog):
             return
 
         sniped_message_sates = message_states[-1]
-        await self.get_response_handler()(ctx, sniped_message_sates)
+        delete_button, response = await self.use_handler(ctx, sniped_message_sates)
         with contextlib.suppress(KeyError):  # Race condition if it gets automatically pruned
             self.message_cache.pop(sniped_message_sates[-1].message.id)
 
-    def get_response_handler(self) -> ResponseHandler:
-        snipe_response_type = self.settings.snipe_response_type.value
-        if snipe_response_type == "embed":
-            return embed_response_handler
-        if snipe_response_type == "webhook":
-            return webhook_response_handler
-        raise ValueError(f"Invalid snipe response type: {snipe_response_type}")
+        await delete_button.wait()
+        if delete_button.should_delete:
+            await response.delete()
+
+    async def use_handler(
+        self,
+        ctx: commands.Context,
+        message_states: list[MessageState]
+    ) -> tuple[DeleteMessageButton, discord.Message]:
+        if self.snipe_response_type == ResponseType.EMBED:
+            return await embed_response_handler(ctx, message_states)
+        if self.snipe_response_type == ResponseType.WEBHOOK:
+            try:
+                return await webhook_response_handler(ctx, message_states)
+            except Exception as error:
+                self.logger.exception(
+                    "Failed to use webhook response handler, falling back to embed",
+                    exc_info=error,
+                )
+                return await embed_response_handler(ctx, message_states)
+        raise ValueError(f"Invalid snipe response type: {self.snipe_response_type}")
 
 
 async def setup(bot: breadcord.Bot):
