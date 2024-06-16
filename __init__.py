@@ -106,7 +106,7 @@ class BreadAssassin(ModuleCog):
         aliases=["s"],
         description='"Snipe" a message that was recently edited or deleted'
     )
-    async def snipe(self, ctx: commands.Context):
+    async def snipe(self, ctx: commands.Context, index: int = 1):
         if not self.settings.allow_edit_sniping.value and not self.settings.allow_deletion_sniping.value:
             await ctx.reply("Sniping is disabled.")
             return
@@ -118,8 +118,7 @@ class BreadAssassin(ModuleCog):
         if not message_states:
             await ctx.reply("No messages to snipe.")
             return
-
-        sniped_message_sates = message_states[-1]
+        sniped_message_sates = message_states[-max(1, min(index, len(message_states)))]
         delete_button, response = await self.use_handler(ctx, sniped_message_sates)
         with contextlib.suppress(KeyError):  # Race condition if it gets automatically pruned
             self.message_cache.pop(sniped_message_sates[-1].message.id)
