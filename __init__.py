@@ -8,7 +8,7 @@ from discord.ext import tasks, commands
 
 import breadcord
 from breadcord.module import ModuleCog
-from .response_handlers import embed_response_handler, webhook_response_handler, ResponseHandler, ACCEPTED_WEBHOOK_NAME
+from .response_handlers import embed_response_handler, webhook_response_handler, ACCEPTED_WEBHOOK_NAME
 from .types import MessageState, ChangeType
 from .views import DeleteMessageButton
 
@@ -26,19 +26,23 @@ class BreadAssassin(ModuleCog):
         self.message_cache: defaultdict[MessageID, list[MessageState]] = defaultdict(list)
         self.prune_message_cache.start()
 
-        @self.settings.snipe_response_type.observe
+        @self.settings.snipe_response_type.observe  # type: ignore
         def on_snipe_response_type_changed(_, new: str) -> None:
             # noinspection PyProtectedMember
             if new not in ResponseType._value2member_map_:
                 raise ValueError(f"Invalid snipe response type: {new}")
-        on_snipe_response_type_changed(None, self.settings.snipe_response_type.value)
+        on_snipe_response_type_changed(None, self.settings.snipe_response_type.value)  # type: ignore
 
     @property
     def snipe_response_type(self) -> ResponseType:
         return ResponseType(self.settings.snipe_response_type.value)
 
     def is_state_expired(self, state: MessageState, *, lenience: timedelta = timedelta()) -> bool:
-        return state.changed_at + timedelta(seconds=self.settings.max_age.value) + lenience < datetime.now()
+        return (
+            state.changed_at
+            + timedelta(seconds=self.settings.max_age.value)  # type: ignore
+            + lenience
+        ) < datetime.now()
 
     @tasks.loop(seconds=3)
     async def prune_message_cache(self):
@@ -48,7 +52,7 @@ class BreadAssassin(ModuleCog):
                 self.message_cache.pop(message_id)
                 self.logger.debug(f"Message {message_id} removed from cache")
 
-    def get_tracked_states_in_channel(self, channel: discord.TextChannel) -> list[list[MessageState]]:
+    def get_tracked_states_in_channel(self, channel: discord.abc.MessageableChannel) -> list[list[MessageState]]:
         channel_states = [
             message_states
             for message_states in self.message_cache.values()
@@ -105,6 +109,9 @@ class BreadAssassin(ModuleCog):
     async def snipe(self, ctx: commands.Context):
         if not self.settings.allow_edit_sniping.value and not self.settings.allow_deletion_sniping.value:
             await ctx.reply("Sniping is disabled.")
+            return
+        if not ctx.guild:
+            await ctx.reply("Sniping is only available in guilds.")
             return
 
         message_states = self.get_tracked_states_in_channel(ctx.channel)
