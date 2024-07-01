@@ -52,7 +52,7 @@ class BreadAssassin(ModuleCog):
                 self.message_cache.pop(message_id)
                 self.logger.debug(f"Message {message_id} removed from cache")
 
-    def get_tracked_states_in_channel(self, channel: discord.abc.MessageableChannel) -> list[list[MessageState]]:
+    def get_tracked_states_in_channel(self, channel: discord.abc.Messageable) -> list[list[MessageState]]:
         channel_states = [
             message_states
             for message_states in self.message_cache.values()
