@@ -146,5 +146,5 @@ class BreadAssassin(ModuleCog):
         raise ValueError(f"Invalid snipe response type: {self.snipe_response_type}")
 
 
-async def setup(bot: breadcord.Bot):
-    await bot.add_cog(BreadAssassin("bread_assassin"))
+async def setup(bot: breadcord.Bot, module: breadcord.module.Module) -> None:
+    await bot.add_cog(BreadAssassin(module.id))
