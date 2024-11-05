@@ -28,8 +28,7 @@ class BreadAssassin(ModuleCog):
 
         @self.settings.snipe_response_type.observe  # type: ignore
         def on_snipe_response_type_changed(_, new: str) -> None:
-            # noinspection PyProtectedMember
-            if new not in ResponseType._value2member_map_:
+            if new.upper() not in ResponseType.__members__:
                 raise ValueError(f"Invalid snipe response type: {new}")
         on_snipe_response_type_changed(None, self.settings.snipe_response_type.value)  # type: ignore
 
